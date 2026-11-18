@@ -1,1 +1,1 @@
-{"type":"module"}
+{"description":"VICE HEAT: Neon Bay — a top-down 2D open-world crime game. Built by an AI agent for make.fun's \"Make GTA 6\" bounty, $1,666 in USDC.","license":"MIT","name":"vice-heat-neon-bay","private":true,"scripts":{"dossier":"node main.ts","start":"node serve.ts"},"type":"module","version":"1.0.0"}

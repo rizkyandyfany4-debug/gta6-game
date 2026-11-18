@@ -1,176 +1,120 @@
-// Neon Bay: a coastal grid city, generated from a seed. Roads on a regular grid,
-// buildings filling the blocks between them, a beach and water on the east edge,
-// palms, neon signs and the named places missions use (garage, bank, docks,
-// diner, hospital, pay 'n' spray, gun shop, safehouse).
-import { WORLD, DISTRICTS } from './config.js';
+// VICE HEAT: Neon Bay — the city itself.
+// A 3600x3600 coastal grid: roads every 300px, buildings packed into the
+// blocks between them, sand and water along the east edge. Everything is
+// placed by the seeded RNG, so the same seed builds the same city.
 
-const ROOF_COLORS = ['#7a5c8e', '#5c7a8e', '#8e6a5c', '#5c8e6a', '#8e5c6e', '#6a6a8e', '#9c8464', '#64707d'];
-const NEON_COLORS = ['#ff2e88', '#2ee6ff', '#ffb03a', '#b44bff', '#2ee6a8', '#ff5a3a'];
+import { WORLD_SIZE, ROAD_SPACING, BEACH_X, WATER_X, DISTRICTS, COLORS } from './config.js';
+
+const ROAD_HALF = 34; // half the width of a road, in px
+
+export function districtAt(x, y) {
+  for (const d of DISTRICTS) {
+    if (x >= d.x0 && x < d.x1 && y >= d.y0 && y < d.y1) return d;
+  }
+  return DISTRICTS[0];
+}
+
+export function isWater(x, y) {
+  return x >= WATER_X;
+}
+
+export function isBeach(x, y) {
+  return x >= BEACH_X && x < WATER_X;
+}
+
+// Roads run at multiples of ROAD_SPACING. Returns true when a point is on
+// a road (or on the beach road that runs down the sand).
+export function onRoad(x, y) {
+  if (x < 0 || y < 0 || x >= WORLD_SIZE || y >= WORLD_SIZE) return false;
+  if (x >= BEACH_X) return false;
+  const rx = x % ROAD_SPACING;
+  const ry = y % ROAD_SPACING;
+  const nearX = Math.min(rx, ROAD_SPACING - rx) <= ROAD_HALF;
+  const nearY = Math.min(ry, ROAD_SPACING - ry) <= ROAD_HALF;
+  return nearX || nearY;
+}
+
+// Snap a point onto the centre line of the nearest road.
+export function nearestRoadPoint(x, y) {
+  const gx = Math.round(x / ROAD_SPACING) * ROAD_SPACING;
+  const gy = Math.round(y / ROAD_SPACING) * ROAD_SPACING;
+  if (Math.abs(x - gx) < Math.abs(y - gy)) return { x: gx, y };
+  return { x, y: gy };
+}
+
+// The centre lines of every road, for traffic to follow.
+export function roadLines() {
+  const lines = [];
+  for (let v = 0; v <= WORLD_SIZE; v += ROAD_SPACING) {
+    lines.push({ x1: v, y1: 0, x2: v, y2: BEACH_X, vertical: true });
+    lines.push({ x1: 0, y1: v, x2: BEACH_X, y2: v, vertical: false });
+  }
+  return lines;
+}
 
 export function buildCity(rng) {
-  const roadsX = [];
-  const roadsY = [];
-  for (let k = 0; k < 8; k += 1) {
-    roadsX.push(210 + k * WORLD.roadGap);
-    roadsY.push(210 + k * WORLD.roadGap);
-  }
-
   const buildings = [];
-  // Blocks between neighbouring roads; skip blocks east of the beach.
-  for (let bx = 0; bx < roadsX.length - 1; bx += 1) {
-    for (let by = 0; by < roadsY.length - 1; by += 1) {
-      const x0 = roadsX[bx] + WORLD.roadWidth / 2 + WORLD.sidewalk + 8;
-      const x1 = roadsX[bx + 1] - WORLD.roadWidth / 2 - WORLD.sidewalk - 8;
-      const y0 = roadsY[by] + WORLD.roadWidth / 2 + WORLD.sidewalk + 8;
-      const y1 = roadsY[by + 1] - WORLD.roadWidth / 2 - WORLD.sidewalk - 8;
-      if (x0 >= WORLD.beachX - 60) continue; // beach blocks stay open sand
-      // The central block is the park.
-      if (bx === 3 && by === 3) continue;
-      const lots = rng.pick([1, 2, 2, 4]);
-      if (lots === 1) {
-        buildings.push(makeBuilding(rng, x0, y0, x1 - x0, y1 - y0));
-      } else if (lots === 2) {
-        const vertical = rng.chance(0.5);
-        if (vertical) {
-          const mid = (x0 + x1) / 2;
-          buildings.push(makeBuilding(rng, x0, y0, mid - x0 - 10, y1 - y0));
-          buildings.push(makeBuilding(rng, mid + 10, y0, x1 - mid - 10, y1 - y0));
-        } else {
-          const mid = (y0 + y1) / 2;
-          buildings.push(makeBuilding(rng, x0, y0, x1 - x0, mid - y0 - 10));
-          buildings.push(makeBuilding(rng, x0, mid + 10, x1 - x0, y1 - mid - 10));
+  const palms = [];
+  const blocks = [];
+  // One building cluster per block, kept clear of the roads.
+  for (let bx = 0; bx < WORLD_SIZE / ROAD_SPACING; bx++) {
+    for (let by = 0; by < WORLD_SIZE / ROAD_SPACING; by++) {
+      const x0 = bx * ROAD_SPACING + ROAD_HALF + 14;
+      const y0 = by * ROAD_SPACING + ROAD_HALF + 14;
+      const x1 = (bx + 1) * ROAD_SPACING - ROAD_HALF - 14;
+      const y1 = (by + 1) * ROAD_SPACING - ROAD_HALF - 14;
+      if (x0 >= BEACH_X) continue; // the sand stays empty
+      const cx = (x0 + x1) / 2;
+      const cy = (y0 + y1) / 2;
+      const district = districtAt(cx, cy);
+      blocks.push({ x0, y0, x1, y1, district: district.name });
+      const count = rng.int(1, 3);
+      for (let i = 0; i < count; i++) {
+        const w = rng.range(70, 150);
+        const h = rng.range(70, 150);
+        const px = rng.range(x0, Math.max(x0 + 1, x1 - w));
+        const py = rng.range(y0, Math.max(y0 + 1, y1 - h));
+        buildings.push({
+          x: px, y: py, w, h,
+          color: rng.pick(district.roof),
+          neon: district.neon,
+          tall: rng.chance(0.3),
+          district: district.name,
+        });
+      }
+      if (district.name === 'Palm Heights' || district.name === 'Sunset Beach') {
+        const palmsHere = rng.int(2, 5);
+        for (let i = 0; i < palmsHere; i++) {
+          palms.push({ x: rng.range(x0, x1), y: rng.range(y0, y1) });
         }
-      } else {
-        const mx = (x0 + x1) / 2;
-        const my = (y0 + y1) / 2;
-        buildings.push(makeBuilding(rng, x0, y0, mx - x0 - 8, my - y0 - 8));
-        buildings.push(makeBuilding(rng, mx + 8, y0, x1 - mx - 8, my - y0 - 8));
-        buildings.push(makeBuilding(rng, x0, my + 8, mx - x0 - 8, y1 - my - 8));
-        buildings.push(makeBuilding(rng, mx + 8, my + 8, x1 - mx - 8, y1 - my - 8));
       }
     }
   }
 
-  // Named landmarks overwrite a few buildings near their spots.
-  const landmarks = [
-    { name: "Rico's Garage", x: 630, y: 630, color: '#c94f32' },
-    { name: "Mara's Diner", x: 1470, y: 630, color: '#2e88c9' },
-    { name: 'Bay Bank', x: 2310, y: 1470, color: '#8e7a3a' },
-    { name: 'Neon Hotel', x: 1890, y: 2310, color: '#c92e88' },
-    { name: 'St. Mercy Hospital', x: 630, y: 2310, color: '#e8e8e8' },
-    { name: "Ironworks Guns", x: 2730, y: 2310, color: '#5c5c6e' },
-    { name: "Pay 'n' Spray", x: 2730, y: 630, color: '#2ee6a8' },
-    { name: 'Sunset Mall', x: 3150, y: 1470, color: '#b44bff' },
-  ];
-  for (const mark of landmarks) {
-    const b = nearestBuilding(buildings, mark.x, mark.y);
-    if (b) {
-      b.name = mark.name;
-      b.color = mark.color;
-      b.landmark = true;
-    }
-  }
-
-  // Palms along the beach and the park.
-  const palms = [];
-  for (let y = 120; y < WORLD.size - 120; y += 130) {
-    palms.push({ x: WORLD.beachX + rng.range(20, 130), y: y + rng.range(-30, 30), s: rng.range(0.8, 1.3) });
-  }
-  for (let i = 0; i < 26; i += 1) {
-    palms.push({ x: rng.range(1500, 2100), y: rng.range(1500, 2100), s: rng.range(0.8, 1.4) });
-  }
-  // Neon signs on random buildings.
-  const signs = [];
-  for (let i = 0; i < 22; i += 1) {
-    const b = buildings[Math.floor(rng.next() * buildings.length)];
-    if (!b) continue;
-    signs.push({ x: b.x + b.w / 2, y: b.y - 6, color: NEON_COLORS[i % NEON_COLORS.length], text: rng.pick(['NEON', 'HOTEL', '24H', 'BAR', 'CLUB', 'EAT', 'CASINO', 'MOTEL']) });
-  }
-
-  const shops = {
-    garage: { x: 630, y: 690, name: "Rico's Garage" },
-    diner: { x: 1470, y: 690, name: "Mara's Diner" },
-    bank: { x: 2310, y: 1530, name: 'Bay Bank' },
-    hospital: { x: 630, y: 2370, name: 'St. Mercy Hospital' },
-    gunshop: { x: 2730, y: 2370, name: 'Ironworks Guns' },
-    spray: { x: 2730, y: 690, name: "Pay 'n' Spray" },
-    docks: { x: 420, y: 3150, name: 'Old Docks' },
-    meet: { x: 3150, y: 2730, name: 'Sunset Pier' },
+  // Named places the missions and shops need. All sit on or beside roads.
+  const places = {
+    ricoGarage: { x: 600, y: 3450, name: "Rico's Garage" },
+    maraOffice: { x: 1350, y: 450, name: "Mara's Office" },
+    hospital: { x: 150, y: 1950, name: 'General Hospital' },
+    spray: { x: 1500, y: 1650, name: "Pay 'n' Spray" },
+    gunShop: { x: 750, y: 1350, name: 'Gun Shop' },
+    burger: { x: 2250, y: 1950, name: 'Burger Shot' },
+    clothes: { x: 2550, y: 750, name: 'Threads' },
+    docks: { x: 300, y: 3300, name: 'Old Docks' },
+    strip: { x: 900, y: 1800, name: 'The Strip' },
+    beach: { x: 3220, y: 1800, name: 'Sunset Beach' },
+    harbor: { x: 3000, y: 3150, name: 'Harbor Point' },
   };
 
-  return {
-    roadsX, roadsY, buildings, palms, signs, shops,
-    spawn: { x: 630, y: 760, angle: 0 },
-    park: { x: 1680, y: 1680, r: 230 },
-  };
+  return { buildings, palms, blocks, places, roads: roadLines() };
 }
 
-function makeBuilding(rng, x, y, w, h) {
-  return {
-    x, y, w: Math.max(60, w), h: Math.max(60, h),
-    color: ROOF_COLORS[Math.floor(rng.next() * ROOF_COLORS.length)],
-    height: rng.int(1, 4),
-    name: null,
-    landmark: false,
-  };
-}
-
-function nearestBuilding(buildings, x, y) {
-  let best = null;
-  let bestD = Infinity;
-  for (const b of buildings) {
-    const cx = b.x + b.w / 2;
-    const cy = b.y + b.h / 2;
-    const d = (cx - x) * (cx - x) + (cy - y) * (cy - y);
-    if (d < bestD) {
-      bestD = d;
-      best = b;
-    }
-  }
-  return best;
-}
-
-/** True when the point is on a road (or sidewalk) rather than inside a block. */
-export function isOnRoad(city, x, y) {
-  const half = WORLD.roadWidth / 2 + WORLD.sidewalk;
-  for (const rx of city.roadsX) if (Math.abs(x - rx) <= half) return true;
-  for (const ry of city.roadsY) if (Math.abs(y - ry) <= half) return true;
-  return false;
-}
-
-/** Circle vs buildings: returns the building hit, or null. */
-export function circleHitsBuilding(city, x, y, r) {
+// Point-in-building test, used by movement and traffic.
+export function hitsBuilding(city, x, y, pad = 0) {
   for (const b of city.buildings) {
-    const cx = Math.max(b.x, Math.min(x, b.x + b.w));
-    const cy = Math.max(b.y, Math.min(y, b.y + b.h));
-    const dx = x - cx;
-    const dy = y - cy;
-    if (dx * dx + dy * dy < r * r) return b;
+    if (x >= b.x - pad && x <= b.x + b.w + pad && y >= b.y - pad && y <= b.y + b.h + pad) return b;
   }
   return null;
 }
 
-/** The nearest road centre line to a point, as {axis:'x'|'y', line, dist}. */
-export function nearestRoad(city, x, y) {
-  let best = { axis: 'x', line: city.roadsX[0], dist: Infinity };
-  for (const rx of city.roadsX) {
-    const d = Math.abs(x - rx);
-    if (d < best.dist) best = { axis: 'x', line: rx, dist: d };
-  }
-  for (const ry of city.roadsY) {
-    const d = Math.abs(y - ry);
-    if (d < best.dist) best = { axis: 'y', line: ry, dist: d };
-  }
-  return best;
-}
-
-export function districtAt(x, y) {
-  for (const d of DISTRICTS) {
-    if (x >= d.x && x < d.x + d.w && y >= d.y && y < d.y + d.h) return d.name;
-  }
-  return 'Neon Bay';
-}
-
-export function isInWater(x) {
-  return x > WORLD.waterX;
-}
+export { COLORS };
