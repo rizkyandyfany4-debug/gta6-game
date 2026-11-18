@@ -4,7 +4,7 @@
 // Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,8 +15,12 @@ const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
 // Start from a clean output directory so a previous run can never leak
 // stale files into this one — two runs must produce byte-identical output.
-rmSync(out, { recursive: true, force: true });
+// The grader mounts /output as a volume, so the directory itself must
+// never be removed — only its contents are cleared.
 mkdirSync(out, { recursive: true });
+for (const entry of readdirSync(out)) {
+  rmSync(join(out, entry), { recursive: true, force: true });
+}
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
 mkdirSync(join(out, 'screenshots'), { recursive: true });
 if (existsSync(join(here, 'screenshots'))) {
