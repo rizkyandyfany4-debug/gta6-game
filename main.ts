@@ -13,16 +13,16 @@ import { buildDossier } from './vendor/makefun-game.ts';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-// Start from a clean output directory so a previous run can never leak
-// stale files into this one — two runs must produce byte-identical output.
 // The grader mounts /output as a volume, so the directory itself must
 // never be removed — only its contents are cleared.
 mkdirSync(out, { recursive: true });
 for (const entry of readdirSync(out)) {
   rmSync(join(out, entry), { recursive: true, force: true });
 }
+
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
 mkdirSync(join(out, 'screenshots'), { recursive: true });
+// Screenshots are copied only when the folder exists beside this file.
 if (existsSync(join(here, 'screenshots'))) {
   cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
 }
@@ -34,6 +34,8 @@ const dossier = buildDossier(out, {
   game_max_bytes: 50331648,
   game_path_max_bytes: 1000,
 });
+// The output was cleared first, so a failed run can never leave a stale
+// dossier.json behind for the next one.
 writeFileSync(join(out, 'dossier.json'), dossier);
 
 // Report the fingerprint so two runs can be compared by eye: identical
