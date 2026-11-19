@@ -1,9 +1,9 @@
 // VICE HEAT: Neon Bay — the gta6-01 entrypoint.
-// Copies game/ and screenshots/ beside this file into the output
+//
+// Copies game/ and screenshots/ from beside this file into the output
 // directory and writes dossier.json with the vendored make.fun library.
 // Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
-
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -13,8 +13,9 @@ import { buildDossier } from './vendor/makefun-game.ts';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-// The grader mounts /output as a volume, so the directory itself must
-// never be removed — only its contents are cleared.
+// The output directory is a mount point in the grader: create it if it is
+// missing, but never remove it — only its contents are cleared, so a stale
+// dossier.json from a previous run can never survive into the new handoff.
 mkdirSync(out, { recursive: true });
 for (const entry of readdirSync(out)) {
   rmSync(join(out, entry), { recursive: true, force: true });
@@ -22,8 +23,8 @@ for (const entry of readdirSync(out)) {
 
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
 mkdirSync(join(out, 'screenshots'), { recursive: true });
-// Screenshots are copied only when the folder exists beside this file.
 if (existsSync(join(here, 'screenshots'))) {
+  // Copy the screenshots the entry ships with, when they are present.
   cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
 }
 
@@ -34,11 +35,7 @@ const dossier = buildDossier(out, {
   game_max_bytes: 50331648,
   game_path_max_bytes: 1000,
 });
-// The output was cleared first, so a failed run can never leave a stale
-// dossier.json behind for the next one.
-writeFileSync(join(out, 'dossier.json'), dossier);
 
-// Report the fingerprint so two runs can be compared by eye: identical
-// sha256 means the handoff is deterministic.
+writeFileSync(join(out, 'dossier.json'), dossier);
 const sha = createHash('sha256').update(readFileSync(join(out, 'dossier.json'))).digest('hex');
 console.log(`VICE HEAT: Neon Bay handed in to ${out} (dossier.json ${dossier.length} bytes, sha256 ${sha})`);
